@@ -6,19 +6,17 @@ on:
     branches:
       - main
       - master
-    paths:
-      - 'public/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'capacitor.config.json'
-      - '.github/workflows/**'
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -26,34 +24,60 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Install dependencies
+      - name: Check Project Files
+        run: |
+          test -f package.json
+          test -f capacitor.config.json
+          test -f index.html
+          echo "Required project files found."
+
+      - name: Prepare Web Assets
+        run: |
+          mkdir -p public
+          cp index.html public/
+          cp admin.html public/
+          cp privacy.html public/
+          cp preview-reference.html public/
+          cp cloudinary-config.js public/
+          cp firebase-config.js public/
+          test -f public/index.html
+
+      - name: Install Dependencies
         run: npm install
 
-      - name: Add Android platform if not present
+      - name: Validate Capacitor Configuration
+        run: npx cap --version
+
+      - name: Add Android Platform
         run: |
           if [ ! -d android/app ]; then
             npx cap add android
           fi
 
-      - name: Sync web assets and plugins
+      - name: Sync Android Project
         run: npx cap sync android
 
-      - name: Build debug APK
+      - name: Build Debug APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload debug APK artifact
+      - name: Verify APK
+        run: |
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: maru-ghar-debug-apk
+          name: Maru-Ghar-Android-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
