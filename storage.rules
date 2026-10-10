@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'yJYiuaUE3KXVLVuWqLyLRH5owQJ3';
+    }
+    function listingStatus(listingId) {
+      return firestore.get(/databases/(default)/documents/listings/$(listingId)).data.status;
+    }
+
+    match /property-photos/{listingId}/{fileName} {
+      // Public reads are allowed only after the listing is approved.
+      allow read: if isAdmin() || listingStatus(listingId) == 'approved';
+      // Owner form may upload small image files only to an existing pending listing.
+      allow create: if isAdmin() || (
+        listingStatus(listingId) == 'pending'
+        && request.resource != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
+      );
+      allow update, delete: if isAdmin();
+    }
+  }
+}

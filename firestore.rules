@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == 'yJYiuaUE3KXVLVuWqLyLRH5owQJ3';
+    }
+
+    match /listings/{listingId} {
+      // Visitors may read approved listings only. Admin may read all listings.
+      allow read: if isAdmin() || resource.data.status == 'approved';
+
+      // Public owner submission: only pending Gandhinagar listings and known fields.
+      allow create: if request.resource.data.keys().hasAll([
+          'ownerName', 'phone', 'type', 'purpose', 'area', 'price', 'title',
+          'size', 'description', 'ownerConsent', 'status', 'city', 'photoPaths', 'createdAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'ownerName', 'phone', 'type', 'purpose', 'area', 'price', 'title',
+          'size', 'description', 'ownerConsent', 'status', 'city', 'photoPaths', 'createdAt'
+        ])
+        && request.resource.data.ownerConsent == true
+        && request.resource.data.status == 'pending'
+        && request.resource.data.city == 'Gandhinagar'
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerName.size() >= 2
+        && request.resource.data.ownerName.size() <= 100
+        && request.resource.data.phone is string
+        && request.resource.data.phone.matches('^[0-9+() -]{10,16}$')
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 3
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.area is string
+        && request.resource.data.area.size() >= 2
+        && request.resource.data.area.size() <= 120
+        && request.resource.data.price is string
+        && request.resource.data.price.size() >= 1
+        && request.resource.data.price.size() <= 40
+        && request.resource.data.type in [
+          'ઘર', 'ફ્લેટ', 'દુકાન', 'રેસિડેન્શિયલ પ્લોટ',
+          'કોમર્શિયલ પ્લોટ', 'ઓફિસ', 'વેરહાઉસ'
+        ]
+        && request.resource.data.purpose in ['rent', 'sale']
+        && request.resource.data.size is string
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 2000
+        && request.resource.data.photoPaths is list
+        && request.resource.data.photoPaths.size() <= 4
+        && request.resource.data.createdAt == request.time;
+
+      // Only the administrator can approve, reject, edit, or delete listings.
+      allow update, delete: if isAdmin();
+    }
+  }
+}

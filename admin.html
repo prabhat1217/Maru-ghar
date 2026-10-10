@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="gu">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#171717"><title>મારું ઘર | એડમિન પેનલ</title>
+<style>
+:root{--gold:#d6aa50;--gold2:#f4d78e;--dark:#171717;--line:#e6ddc9}*{box-sizing:border-box}body{font-family:Arial,'Noto Sans Gujarati',sans-serif;background:#f4f0e7;margin:0;color:#222}.wrap{max-width:1050px;margin:24px auto;padding:16px}h1{color:#9a6c1d}.panel,.item{background:#fff;border:1px solid #e3d8c2;border-radius:14px;padding:18px;margin:12px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}input{padding:12px;border:1px solid #ddd;border-radius:8px;width:100%}.btn{border:0;border-radius:8px;padding:11px 15px;background:linear-gradient(135deg,#f5d88b,#c28b2e);font-weight:bold;cursor:pointer;margin:5px 5px 5px 0}.btn:disabled{opacity:.55;cursor:wait}.reject{background:#ddd}.muted{color:#666;line-height:1.7}.item-photos{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.item-photos img{width:130px;height:95px;object-fit:cover;border-radius:8px;border:1px solid #ddd}.item h3{margin-top:0}.msg{white-space:pre-wrap;color:#7c5110}@media(max-width:600px){.grid{grid-template-columns:1fr}.wrap{padding:10px}}
+</style>
+</head>
+<body><div class="wrap">
+<h1>મારું ઘર — એડમિન પેનલ</h1>
+<p class="muted">માત્ર અધિકૃત એડમિન માટે. લિસ્ટિંગ મંજૂર કરવાથી તે જાહેર વેબસાઇટ અને APKમાં દેખાશે. Firebase UID અને સુરક્ષા નિયમો સેટ કર્યા વગર પ્રોડક્શનમાં ઉપયોગ ન કરવો.</p>
+<section class="panel" id="loginPanel"><div class="grid"><input id="email" type="email" autocomplete="username" placeholder="Admin email" required><input id="password" type="password" autocomplete="current-password" placeholder="Password" required></div><button class="btn" id="login">લોગિન</button><p id="loginMsg" class="msg" role="status"></p></section>
+<section class="panel" id="dashboard" hidden><div><b id="welcome"></b></div><button class="btn" id="refresh">Pending લિસ્ટિંગ ફરી લોડ કરો</button><button class="btn reject" id="logout">લોગઆઉટ</button><p id="dashMsg" class="msg" role="status"></p><div id="items"></div></section>
+</div>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getStorage, ref, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js';
+import { firebaseConfig } from './firebase-config.js';
+const configured = firebaseConfig.apiKey !== 'PASTE_FIREBASE_API_KEY'
+  && firebaseConfig.projectId !== 'PASTE_PROJECT_ID'
+  && firebaseConfig.adminUid !== 'REPLACE_WITH_ADMIN_UID';
+let auth, db, storage;
+const loginPanel = document.querySelector('#loginPanel'), dashboard = document.querySelector('#dashboard');
+const loginMsg = document.querySelector('#loginMsg'), dashMsg = document.querySelector('#dashMsg'), items = document.querySelector('#items');
+if (configured) {
+  const app = initializeApp(Object.fromEntries(Object.entries(firebaseConfig).filter(([key]) => key !== 'adminUid'))); auth = getAuth(app); db = getFirestore(app); storage = getStorage(app);
+} else {
+  loginMsg.textContent = 'Firebase config અને adminUid સેટ કર્યા પછી જ એડમિન લોગિન ચાલુ થશે.';
+  document.querySelector('#login').disabled = true;
+}
+document.querySelector('#login').addEventListener('click', async () => {
+  if (!configured) return;
+  const email = document.querySelector('#email').value.trim(), password = document.querySelector('#password').value;
+  if (!email || !password) { loginMsg.textContent = 'Email અને password બંને લખો.'; return; }
+  loginMsg.textContent = 'લોગિન થઈ રહ્યું છે…';
+  try { await signInWithEmailAndPassword(auth, email, password); }
+  catch (error) { console.error(error); loginMsg.textContent = 'લોગિન નિષ્ફળ. Email/password અને Firebase Authentication તપાસો.'; }
+});
+if (configured) onAuthStateChanged(auth, async user => {
+  if (user && user.uid !== firebaseConfig.adminUid) {
+    loginMsg.textContent = 'આ એકાઉન્ટને એડમિન પરવાનગી નથી.';
+    await signOut(auth); return;
+  }
+  loginPanel.hidden = !!user; dashboard.hidden = !user;
+  if (user) { document.querySelector('#welcome').textContent = 'સુરક્ષિત એડમિન સેશન'; await loadPending(); }
+});
+document.querySelector('#logout').addEventListener('click', () => auth && signOut(auth));
+document.querySelector('#refresh').addEventListener('click', loadPending);
+async function loadPending() {
+  if (!db) return;
+  items.replaceChildren(); dashMsg.textContent = 'લિસ્ટિંગ લોડ થઈ રહી છે…';
+  try {
+    const snap = await getDocs(query(collection(db, 'listings'), where('status', '==', 'pending')));
+    dashMsg.textContent = snap.empty ? 'હાલ કોઈ pending લિસ્ટિંગ નથી.' : 'મંજૂરીની રાહમાં ' + snap.size + ' લિસ્ટિંગ.';
+    snap.forEach(docSnap => {
+      const x = docSnap.data(), card = document.createElement('article'); card.className = 'item';
+      const title = document.createElement('h3'); title.textContent = x.title || x.type || 'પ્રોપર્ટી'; card.append(title);
+      const details = document.createElement('p'); details.className = 'muted';
+      details.textContent = [x.ownerName, x.phone, x.area, x.price, x.type, x.purpose === 'rent' ? 'ભાડે' : 'વેચાણ', x.size].filter(Boolean).join(' · '); card.append(details);
+      if (x.description) { const desc = document.createElement('p'); desc.textContent = x.description; card.append(desc); }
+      const photos = document.createElement('div'); photos.className = 'item-photos'; card.append(photos);
+      (Array.isArray(x.photoPaths) ? x.photoPaths : []).forEach(path => {
+        if (typeof path !== 'string') return;
+        const addPhoto = url => { if (!url) return; const img = document.createElement('img'); img.src = url; img.alt = 'પ્રોપર્ટીનો ફોટો'; img.loading = 'lazy'; photos.append(img); };
+        if (/^https:\/\//i.test(path)) addPhoto(path);
+        else if (storage) getDownloadURL(ref(storage, path)).then(addPhoto).catch(() => {});
+      });
+      const approve = document.createElement('button'); approve.className = 'btn'; approve.textContent = 'મંજૂર કરો'; approve.addEventListener('click', () => review(docSnap.id, 'approved', approve));
+      const reject = document.createElement('button'); reject.className = 'btn reject'; reject.textContent = 'નકારો'; reject.addEventListener('click', () => review(docSnap.id, 'rejected', reject));
+      card.append(approve, reject); items.append(card);
+    });
+  } catch (error) { console.error(error); dashMsg.textContent = 'લિસ્ટિંગ લોડ થઈ શકી નથી. Admin UID અને Firestore rules ચકાસો.'; }
+}
+async function review(id, status, button) {
+  if (!db) return;
+  button.disabled = true;
+  try { await updateDoc(doc(db, 'listings', id), { status, reviewedAt: serverTimestamp() }); await loadPending(); }
+  catch (error) { console.error(error); alert('ફેરફાર કરી શક્યા નથી. Admin UID અને Firestore rules તપાસો.'); button.disabled = false; }
+}
+</script></body></html>

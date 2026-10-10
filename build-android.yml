@@ -1,0 +1,47 @@
+name: Build Maru Ghar Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'public/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.json'
+      - '.github/workflows/build-android.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install dependencies
+        run: npm install
+      - name: Add Android platform if not present
+        run: |
+          if [ ! -d android/app ]; then
+            npx cap add android
+          fi
+      - name: Sync web assets and plugins
+        run: npx cap sync android
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maru-ghar-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
